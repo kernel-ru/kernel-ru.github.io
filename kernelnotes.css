@@ -3,21 +3,22 @@
 :root {
 	--red:   #E00000;
 	--green: #008100;
-	--blue:  #0000E0;
-	--black: #111111;
+	--blue:  #3399CC;
+	--black: #000000;
 	--text:  #E5E5E5;
+	--grau:  #191919;
 }
 
 :link {
-	color: #23238E;
+	color: var(--blue);
 }
 
 :visited {
-	color: #008088;
+	color: #F6BAFF;
 }
 
 body {
-	background-color: var(--black);
+	background-color: var(--grau);
 	color: var(--text); 
 	margin: 15px auto;
 	padding: 0 10px;
@@ -38,7 +39,7 @@ tt {
 }
 
 .cmdbox {
-	background: #F5F5F5;
+	background: var(--black);
 	border: 1px solid #AAAAAA;
 	overflow: auto;
 	padding: 10px;
@@ -69,15 +70,15 @@ tt {
 }
 
 #main {
-	color: var(--red);
+	color: var(--text);
 }
 
 #main :link i, #main :visited i {
-	color: #0000FF;
+	color: #cf95ff;
 }
 
 #main :link b, #main :visited b {
-	color: #000084;
+	color: #cf95ff;
 }
 
 #main small {
@@ -146,7 +147,7 @@ tt {
 }
 
 .not-openbsd #callout {
-	color: #0000A0;
+	color: #cf95ff;
 	font-weight: normal;
 }
 
