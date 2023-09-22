@@ -1,0 +1,236 @@
+<!doctype html>
+<title>Пишем NTP клиент</title>
+<meta charset=utf-8>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" type="text/css" href="../kernelnotes.css">
+<link rel="canonical" href="https://kernel-ru.github.io/c/ntp_client.html">
+
+<body>
+<div id="main">
+	<h1><span>C</span><name>Programming</name><span>Language</span>:
+		пишем NTP клиент
+<small>
+<a href="../index.html">[home]</a>
+<a href="https://github.com/kernel-ru/kernel-ru.github.io">[github]</a>
+</small>
+</h1>
+</div>
+
+<ul>
+  <li><a href="#Intro"        >История протокола</a>
+  <li><a href="#Standard"     >Пару слов о стандарте</a>
+  <li><a href="#NTP3Client"   >NTPv3 клиент</a>
+  <li><a href="#end"          >Пролог</a>
+</ul>
+
+<hr>
+
+<h2 id="Intro">История протокола</h2>
+
+В конце 1970-х, спустя всего несколько лет после окончания университета,
+<a href="https://en.wikipedia.org/wiki/David_L._Mills">Дэвид Миллс</a>,
+тогда еще молодой специалист из компании COMSAT, начинает работать над синхронизацией
+времени между узлами сети <a href="https://en.wikipedia.org/wiki/ARPANET">ARPANET</a>.
+Результататом его работы в 1985 году станет первая версия протокола
+<a href="https://en.wikipedia.org/wiki/Network_Time_Protocol">NTP (Network Time Protocol)</a>.
+
+<p>
+Этот протокол дает возможность синхронизировать информацию о системном времени
+компьютера с такой же информацией на выбранном сервере с точностью до десятков
+миллисекунд.
+Эта синхронизация крайне необходима для стабильной работы компьютерных сетей.
+Например, сегодня при помощи NTP наши компьютеры через сеть получают точные временные
+метки финансовых транзакций, а также обеспечивается синхронизация времени для
+регистрации и мониторинга сетевой активности.
+
+<p>
+Атаки на протокол NTP сегодня перестали быть чем-то необычным. Очень многие системы
+получают данные от общего NTP сервера. Манипуляция этими данными (предоставление ему
+ложных данных о текущем времени) может нарушить стабильную работу компьютера, а именно
+-- внести изменения в его реакцию на ответы от других компьютеров в сети.
+
+<h2 id="Standard">Пару слов о стандарте</h2>
+
+NTP является одним из самых старых сетевых протоколов. Его последняя, четвертая,
+версия вышла в июне 2010 года и описана в
+<a href="https://datatracker.ietf.org/doc/html/rfc5905">RFC5905</a>,
+а сам NTP header, посылаемый клиентской стороной, на
+<a href="https://datatracker.ietf.org/doc/html/rfc5905#page-19">19 странице</a>.
+Стоит так же сказать, что клиентская часть третьей и четвертой версии совместимы.
+Изменения последней версии касаются больше инфраструктуры, построенной на основе
+NTP-кластеров (серверная часть).
+В клиентскую же часть были добавленны три необязательных поля, связанных с
+безопасностью: Key Identifier и Message Digest, а так же Autenticator-поле:
+Key/Algorithm Identifier Message Hash (длиной 64 или 128 байт).
+
+<p>
+До сих пор широко используется NTPv3 запросы. Это как правило анонимные запросы к
+общедоступным северам, где не используется никакие средства безопасности.
+Сначала рассмотрим как выглядит NTPv3 header и попытаемся написать клиент для этой
+версии протокола. Затем расширим нашу реализацию, добавив дополнительные поля в NTP
+header, и получим новый, совместимый с четвертой версией, NTP клиент.
+
+<h2 id="Client">NTPv3 клиент</h2>
+
+Итак, структура 48 байтового NTPv3 заголовка, который мы должны составить и отослать
+серверу, должна выглядеть вот так:
+
+<pre class="cmdbox">
+typedef struct
+{
+    unsigned leap   : 2;  // 2 bits
+    unsigned ver    : 3;  // 3 bits
+    unsigned mode   : 3;  // 3 bits
+        
+    uint8_t  stratum;     // 8 bits
+    uint8_t  poll;        // 8 bits
+    uint8_t  precision;   // 8 bits
+         
+    uint32_t root_delay;  // 32 bits
+    uint32_t root_dis;    // 32 bits
+    uint32_t ref_id;      // 32 bits
+         
+    uint32_t ref_Tm_s;    // 32 bits
+    uint32_t ref_Tm_f;    // 32 bits
+         
+    uint32_t orig_Tm_s;   // 32 bits
+    uint32_t orig_Tm_f;   // 32 bits
+         
+    uint32_t rcv_Tm_s;    // 32 bits
+    uint32_t rcv_Tm_f;    // 32 bits
+         
+    uint32_t tsm_Tm_s;    // 32 bits
+    uint32_t tsm_xTm_f;   // 32 bits
+
+} ntp_packet;
+</pre>
+
+Почти все поля этой структуры можно оставить пустыми, т.е. заполненными нулями.
+Инициализировать нужно только первые восемь бит. Это первые три поля:
+leap (индикатор перехода, 2 бита), ver(номер версии, 3 бита) и mode(режим, 3 бита):
+
+<pre class="cmdbox">
+ntp_packet packet = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+ 
+// Set the first bits to 00,011,011: leap = 0, ver = 3, mode = 3
+*((char *) &packet + 0) = 0x1b; // Represents 00011011 in base 2
+</pre>
+
+IP и UPD заголовки создадим при помощи функции
+<a href=https://man7.org/linux/man-pages/man2/socket.2.html">socket()</a>.
+Параметр <b>SOCK_DGRAM</b> означает, что мы создаем UDP сокет.
+
+<p>
+Информацю об удаленном хосте (сервере) можно получить при помощи
+<a href=https://man7.org/linux/man-pages/man3/gethostbyname.3.html">gethostbyname()</a>.
+Это устаревшая obsolete функция. Ее использование я оставлю в коде просто как
+демонстацию. Она до сих пор используется во многих приложениях, но
+более правильная реализация будет продемонстрированна в следующем NTPv4
+примере.
+
+<p>
+Заполняем структуру serv_addr нулями при помощи функции
+<a href=https://man7.org/linux/man-pages/man3/bzero.3.html>bzero()</a>.
+<!-- bcopy -->
+
+<p>
+Два единственно необходимых поля в структуре serv_addr, которые мы должны указать
+явно, это порт и протокол, используемый на третьем OSI уровне (сетевой протокол).
+Стандартный NTP порт это 123, а <b>AF_INET</b> означает, что мы работаем с IPv4.
+
+<p>
+Последние две используемые функции это
+<a href="https://man7.org/linux/man-pages/man3/sendto.3p.html">sendto()</a> и
+<a href="https://man7.org/linux/man-pages/man3/recvfrom.3p.html">recvfrom()</a>;
+для отправки и получения обратных сообщений от сервера.
+Последняя перезаписывает значения полей структуры <b>packet</b>,
+т.е. там будет находиться ответ от сервера.
+
+<pre class="cmdbox">
+struct sockaddr_in serv_addr;
+struct hostent *server;
+int    sockfd;
+ 
+if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+    oops("can't create socket", 2);
+ 
+if ((server = gethostbyname(*++argv)) == NULL)
+    oops("can't find this host", 2);
+ 
+bzero((void *)&serv_addr, sizeof(serv_addr));
+bcopy((void *)server->h_addr, (void *)&serv_addr.sin_addr, server->h_length);
+ 
+serv_addr.sin_port = htons(123);
+serv_addr.sin_family = AF_INET;
+ 
+if (sendto(sockfd, &packet, sizeof(packet), 0, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) == -1)
+      oops("sendto failed", 3);
+ 
+socklen_t saddrlen = sizeof(serv_addr); 
+if (recvfrom(sockfd, (char*) &packet, sizeof(packet), 0, (struct sockaddr *) &serv_addr, &saddrlen) == -1)
+      oops("recvfrom failed", 3);
+</pre>
+
+Пожалуй еще одна важная вещь, о которой надо сказать, связана со стандартом NTP протокола:
+информация от сервера приходит не в виде строки, которую мы привыкли видеть например в
+выводе <a href="https://man7.org/linux/man-pages/man1/date.1.html">date(1)</a>.
+Вместо этого сервер просто шлет число. Это 
+<a href="https://datatracker.ietf.org/doc/html/rfc5905#page-74">количество секунд</a>,
+прошедьшее с
+<a href="https://ru.wikipedia.org/wiki/Unix-%D0%B2%D1%80%D0%B5%D0%BC%D1%8F">начала эпохи</a>.
+Для того, чтобы увидеть привычный нам вывод, мы должны сконвертировать его при помощи
+такого кода:
+
+<pre class="cmdbox">
+packet.tsm_Tm_s = ntohl(packet.tsm_Tm_s);
+time_t tTm = (time_t) (packet.tsm_Tm_s - NTP_TIMESTAMP_DELTA);
+printf("Time: %s", ctime((const time_t*) &tTm));
+</pre>
+
+<p>
+Полный код клиента можно найти
+<a href="https://github.com/kernel-ru/Network/blob/master/sockets/UDP/ntp_client.c">тут</a>.
+
+<p>
+Собираем, запускаем:
+<pre class="cmdbox">
+% gcc -Wall ntp_client.c -o ntp_client
+% ./ntp_client time.google.com
+Time: Thu May 16 17:22:49 2024
+</pre>
+
+<p>
+Давайте посмотрим, что в действительности мы отправили и получили:
+<pre class="cmdbox">
+# tcpdump -vvv -nni any port 123
+tcpdump: data link type LINUX_SLL2
+tcpdump: listening on any, link-type LINUX_SLL2 (Linux cooked v2), snapshot length 262144 bytes
+
+17:22:49.307966 enp0s31f6 Out IP (tos 0x0, ttl 64, id 11147, offset 0, flags [DF], proto UDP (17), length 76)
+    192.168.2.213.44130 > 216.239.35.4.123: [bad udp cksum 0xbfba -> 0x782f!] NTPv3, Client, length 48
+        Leap indicator:  (0), Stratum 0 (unspecified), poll 0 (1s), precision 0
+        Root Delay: 0.000000, Root dispersion: 0.000000, Reference-ID: (unspec)
+          Reference Timestamp:  0.000000000
+          Originator Timestamp: 0.000000000
+          Receive Timestamp:    0.000000000
+          Transmit Timestamp:   0.000000000
+            Originator - Receive Timestamp:  0.000000000
+            Originator - Transmit Timestamp: 0.000000000
+17:22:49.325978 enp0s31f6 In  IP (tos 0x0, ttl 60, id 10415, offset 0, flags [none], proto UDP (17), length 76)
+    216.239.35.4.123 > 192.168.2.213.44130: [udp sum ok] NTPv3, Server, length 48
+        Leap indicator:  (0), Stratum 1 (primary reference), poll 0 (1s), precision -20
+        Root Delay: 0.000000, Root dispersion: 0.000076, Reference-ID: GOOG
+          Reference Timestamp:  3924861769.317839118 (2024-05-16T15:22:49Z)
+          Originator Timestamp: 0.000000000
+          Receive Timestamp:    3924861769.317839118 (2024-05-16T15:22:49Z)
+          Transmit Timestamp:   3924861769.317839119 (2024-05-16T15:22:49Z)
+            Originator - Receive Timestamp:  3924861769.317839118 (2024-05-16T15:22:49Z)
+            Originator - Transmit Timestamp: 3924861769.317839119 (2024-05-16T15:22:49Z)
+</pre>
+
+<h2 id="end">Пролог</h2>
+В настоящее время NTP работает на миллиардах информационных устройств по всему миру, координируя время на всех континентах. Этот проект является одним из краеугольных камней современной цифровой инфраструктуры.
+
+</body>
+</html>
+
