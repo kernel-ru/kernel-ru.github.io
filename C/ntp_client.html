@@ -117,12 +117,12 @@ ntp_packet packet = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 </pre>
 
 IP и UPD заголовки создадим при помощи функции
-<a href=https://man7.org/linux/man-pages/man2/socket.2.html">socket()</a>.
+<a href="https://man7.org/linux/man-pages/man2/socket.2.html">socket()</a>.
 Параметр <b>SOCK_DGRAM</b> означает, что мы создаем UDP сокет.
 
 <p>
 Информацю об удаленном хосте (сервере) можно получить при помощи
-<a href=https://man7.org/linux/man-pages/man3/gethostbyname.3.html">gethostbyname()</a>.
+<a href="https://man7.org/linux/man-pages/man3/gethostbyname.3.html">gethostbyname()</a>.
 Это устаревшая obsolete функция. Ее использование я оставлю в коде просто как
 демонстацию. Она до сих пор используется во многих приложениях, но
 более правильная реализация будет продемонстрированна в следующем NTPv4
@@ -130,7 +130,7 @@ IP и UPD заголовки создадим при помощи функции
 
 <p>
 Заполняем структуру serv_addr нулями при помощи функции
-<a href=https://man7.org/linux/man-pages/man3/bzero.3.html>bzero()</a>.
+<a href="https://man7.org/linux/man-pages/man3/bzero.3.html">bzero()</a>.
 <!-- bcopy -->
 
 <p>
